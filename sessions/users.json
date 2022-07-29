@@ -1,0 +1,10 @@
+[
+  {
+    "session_name" : "Session Name",
+    "api_id": 123456,
+    "api_hash": "12345abcde12345abcde",
+    "phone": "123123123123",
+    "password": "Optional",
+    "proxy": ["http", "123.123.123.123", 12345]
+  }
+]
