@@ -48,9 +48,7 @@ async def main() -> None:
 
 if __name__ == '__main__':
     try:
-        try:
-            asyncio.run(main())
-        finally:
-            input()
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        asyncio.run(main())
     except KeyboardInterrupt:
         pass

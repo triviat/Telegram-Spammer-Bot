@@ -1,3 +1,4 @@
+import telethon.errors.rpcerrorlist
 from telethon import TelegramClient, events
 from telethon.tl import types
 from telethon.tl.functions.channels import JoinChannelRequest
@@ -6,8 +7,12 @@ from telethon.tl.functions.contacts import ResolveUsernameRequest
 import json
 import os
 import asyncio
+import random
 
 replied_users = list()
+count_sent = 0
+session_blocked = list()
+MAX_BLOCKED = 2
 
 
 async def get_sessions() -> list:
@@ -37,13 +42,13 @@ async def create_session(config: dict) -> TelegramClient:
         try:
             print(f'[{config["session_name"]}] Подключение к прокси...')
             client.set_proxy(config['proxy'])
-            print(f'[{config["session_name"]}] Прокси успешно установлены.\n')
+            print(f'[{config["session_name"]}] Прокси успешно установлены.')
         except Exception as exc:
             print(f'[{config["session_name"]}] Произошла ошибка при установке прокси.')
             print(f'[ERROR] {exc}')
 
     await client.start(phone=config['phone'])
-    print(f'[{config["session_name"]}] Авторизация прошла успешно.\n')
+    print(f'[{config["session_name"]}] Авторизация прошла успешно.')
     return client
 
 
@@ -74,19 +79,19 @@ async def get_direction() -> int:
         choice = input('Куда отправлять сообщения?\n1. Пользователям\n2. В группы\n').strip()
         if choice == '1':
             if await check_targets_file():
-                print('Установлена отправка Пользователям.\n')
+                print('Установлена отправка Пользователям.')
                 return 1
 
         elif choice == '2':
             if await check_targets_file():
-                print('Установлена отправка в Группы.\n')
+                print('Установлена отправка в Группы.')
                 return 2
 
         else:
             print('Неверный ввод. Введите число 1 или 2.')
             continue
 
-        print('Файл targets.txt не найден.\n')
+        print('Файл targets.txt не найден.')
 
 
 async def check_targets_file() -> bool:
@@ -105,19 +110,19 @@ async def get_message_type() -> int:
         choice = input('Какое сообщение отправлять?\n1. Шаблон\n2. Репост\n').strip()
         if choice == '1':
             if await check_message_file():
-                print('Установлена отправка Шаблоном.\n')
+                print('Установлена отправка Шаблоном.')
                 return 1
 
         elif choice == '2':
             if await check_message_file():
-                print('Установлена отправка Репостом.\n')
+                print('Установлена отправка Репостом.')
                 return 2
 
         else:
             print('Неверный ввод. Введите число 1 или 2.')
             continue
 
-        print('Файл message.txt не найден.\n')
+        print('Файл message.txt не найден.')
 
 
 async def check_message_file() -> bool:
@@ -136,12 +141,12 @@ async def get_auto_reply_status() -> int:
         choice = input('Включить автоответчик?\n1. Да\n2. Нет\n').strip()
         if choice == '1':
             if await check_autoreply_file():
-                print('Автоответчик включен.\n')
+                print('Автоответчик включен.')
                 return 1
             else:
-                print('Файл autoreply.txt не найден.\n')
+                print('Файл autoreply.txt не найден.')
         elif choice == '2':
-            print('Автоответчик отключен.\n')
+            print('Автоответчик отключен.')
             return 2
         else:
             print('Неверный ввод. Введите число 1 или 2.')
@@ -179,7 +184,7 @@ async def set_up_sessions(session_count: int) -> None:
             if choice == '1':
                 return
             elif choice == '2':
-                print('\nТогда начнем настройку\n')
+                print('Тогда начнем настройку')
                 break
             else:
                 print('Неверный ввод. Введите число 1 или 2.')
@@ -194,19 +199,19 @@ async def set_up_sessions(session_count: int) -> None:
               f'Задержка между сообщениями: {delay} секунд\n'
               f'Куда отправлять: {"пользователям" if direction == 1 else "в группы"}\n'
               f'Что отправлять: {"шаблон" if message_type == 1 else "репост"}\n'
-              f'Автоответчик: {"включен" if auto_reply == 1 else "выключен"}\n')
+              f'Автоответчик: {"включен" if auto_reply == 1 else "выключен"}')
 
         while True:
             is_ok = input('Все правильно? (1 - да, 2 - нет): ')
             if is_ok == '1':
-                print('\nНастройки установлены.\n')
+                print('Настройки установлены.')
                 await save_settings(delay=delay,
                                     direction=direction,
                                     message_type=message_type,
                                     auto_reply=auto_reply)
                 return
             elif is_ok == '2':
-                print('\nТогда начнем сначала.\n')
+                print('Тогда начнем сначала.')
                 break
             else:
                 print('Неверный ввод. Введите число 1 или 2.')
@@ -223,8 +228,7 @@ async def start_sessions(sessions: list) -> None:
             session.add_event_handler(reply, events.NewMessage)
 
     for _ in await asyncio.gather(
-            *[start_sending_message(sessions[i], i, len(sessions)) for i in range(len(sessions))],
-            *[session.run_until_disconnected() for session in sessions]):
+            *[start_sending_message(sessions[i], i, len(sessions)) for i in range(len(sessions))]):
         pass
 
 
@@ -235,23 +239,23 @@ async def get_auto_reply_string() -> str:
 
 async def reply(event: events.NewMessage.Event):
     try:
-        user_id = event.message.peer_id.user_id
-        from_id = event.message.from_id.user_id
-        name = ''.join(event.client.__dict__['session'].filename.split('.')[:-1])
+        if event.is_private and (event.message.peer_id.user_id not in replied_users) and \
+                ((await event.client.get_me()).id != event.message.from_id.user_id):
+            user_id = event.message.from_id.user_id
+            name = ''.join(event.client.__dict__['session'].filename.split('.')[:-1])
 
-        if event.is_private and (user_id not in replied_users) and ((await event.client.get_me()).id != from_id):
             replied_users.append(user_id)
+            await event.message.reply(await get_auto_reply_string())
 
-            message = await get_auto_reply_string()
-            await event.client.send_message(user_id, message)
-
-            print(f'[{name}] Ответил на сообщение.\n')
+            print(f'[{name}] Ответил на сообщение.')
     except Exception as exc:
         name = ''.join(event.client.__dict__['session'].filename.split('.')[:-1])
-        print(f'[{name}] Столкнулся с ошибкой. {exc}\n')
+        print(f'[{name}] Столкнулся с ошибкой. {exc}')
 
 
 async def start_sending_message(session: TelegramClient, queue_number: int, queue_step: int) -> None:
+    global count_sent, session_blocked
+
     settings = await get_settings()
     direction = settings['direction']
     message_type = settings['message_type']
@@ -260,10 +264,14 @@ async def start_sending_message(session: TelegramClient, queue_number: int, queu
 
     message_entity = await get_message_entity(session, settings['message_type'])
     if message_entity is None:
+        print(f'[{name}] Не смог найти сообщение для отправки.')
         return
 
     targets = await get_targets_list()
-    if queue_number > len(targets):
+    max_targets = len(targets)
+    if queue_number > max_targets:
+        if settings['auto_reply'] == 1:
+            print(f'[{name}] Встал в режим автоответчика.')
         return
 
     print(f'[{name}] Начал отправку сообщений.')
@@ -272,59 +280,175 @@ async def start_sending_message(session: TelegramClient, queue_number: int, queu
     if message_type == 1 and direction == 1:
         for target in range(queue_number, len(targets), queue_step):
             try:
-                await session.send_message(entity=targets[target], message=message_entity)
+                if len(session_blocked) >= MAX_BLOCKED:
+                    session.disconnect()
+                    print(f'[STOP] [{name}] Было заблокировано {len(session_blocked)} аккаунтов.')
 
-                print(f'[{name}] Отправил сообщение и ждет {delay} секунд.')
+                    with open('bad_users.txt', 'a') as f:
+                        for i in range(target, len(targets), queue_step):
+                            f.write(targets[i]+'\n')
+                    break
+                message = message_entity[random.randint(0, len(message_entity)-1)]
+                await session.send_message(entity=targets[target], message=message)
+
+                count_sent += 1
+                print(f'[{count_sent}/{max_targets}] - [{name}] Отправил сообщение и ждет {delay} секунд.')
                 await asyncio.sleep(delay)
+            except telethon.errors.rpcerrorlist.PhoneNumberBannedError:
+                session_blocked.append(name)
+                print(f'[ERROR] [{name}] Номер заблокирован и прекратил рассылку.')
+                session.disconnect()
+
+                with open('bad_users.txt', 'a') as f:
+                    for i in range(target, len(targets), queue_step):
+                        f.write(targets[i]+'\n')
+                break
             except Exception as exception:
-                print(f'\n[{name}] Столкнулся с ошибкой. \n[ERROR] {exception}\n')
+                if 'A wait of ' in str(exception):
+                    pause_time = int(str(exception).split()[3])
+                    print(f'[{name}] Столкнулся с ошибкой. [ERROR] {exception}\n'
+                          f'И уходит в спячку на {pause_time} секунд.')
+                    await asyncio.sleep(pause_time)
+                else:
+                    print(f'[{name}] Столкнулся с ошибкой. [ERROR] {exception}')
+                with open('bad_users.txt', 'a') as f:
+                    f.write(targets[target]+'\n')
 
     # Отправка шаблоном в группы
     elif message_type == 1 and direction == 2:
         for target in range(queue_number, len(targets), queue_step):
             try:
+                if len(session_blocked) >= MAX_BLOCKED:
+                    session.disconnect()
+                    print(f'[STOP] [{name}] Было заблокировано {MAX_BLOCKED} или более аккаунтов.')
+
+                    with open('bad_users.txt', 'a') as f:
+                        for i in range(target, len(targets), queue_step):
+                            f.write(targets[i]+'\n')
+                    break
+
                 result = await session(ResolveUsernameRequest(targets[target].split('/')[-1]))
                 channel = types.InputChannel(result.peer.channel_id, result.chats[0].access_hash)
                 await session(JoinChannelRequest(channel))
 
-                await session.send_message(entity=targets[target], message=message_entity)
+                message = message_entity[random.randint(0, len(message_entity)-1)]
+                await session.send_message(entity=targets[target], message=message)
 
-                print(f'[{name}] Отправил сообщение и ждет {delay} секунд.')
+                count_sent += 1
+                print(f'[{count_sent}/{max_targets}] - [{name}] Отправил сообщение и ждет {delay} секунд.')
                 await asyncio.sleep(delay)
+            except telethon.errors.rpcerrorlist.PhoneNumberBannedError:
+                session_blocked.append(name)
+                print(f'[ERROR] [{name}] Номер заблокирован и прекратил рассылку.')
+                session.disconnect()
+
+                with open('bad_users.txt', 'a') as f:
+                    for i in range(target, len(targets), queue_step):
+                        f.write(targets[i]+'\n')
+                break
             except Exception as exception:
-                print(f'\n[{name}] Столкнулся с ошибкой. \n[ERROR] {exception}\n')
+                if 'A wait of ' in str(exception):
+                    pause_time = int(str(exception).split()[3])
+                    print(f'[{name}] Столкнулся с ошибкой. [ERROR] {exception}\n'
+                          f'И уходит в спячку на {pause_time} секунд.')
+                    await asyncio.sleep(pause_time)
+                else:
+                    print(f'[{name}] Столкнулся с ошибкой. [ERROR] {exception}')
+                with open('bad_users.txt', 'a') as f:
+                    f.write(targets[target]+'\n')
 
     # Отправка репостом пользователям
     elif message_type == 2 and direction == 1:
         for target in range(queue_number, len(targets), queue_step):
             try:
-                await session.forward_messages(targets[target], message_entity)
+                if len(session_blocked) >= MAX_BLOCKED:
+                    session.disconnect()
+                    print(f'[STOP] [{name}] Было заблокировано {MAX_BLOCKED} или более аккаунтов.')
 
-                print(f'[{name}] Отправил сообщение и ждет {delay} секунд.')
+                    with open('bad_users.txt', 'a') as f:
+                        for i in range(target, len(targets), queue_step):
+                            f.write(targets[i]+'\n')
+                    break
+
+                if isinstance(message_entity, types.Message):
+                    await session.forward_messages(targets[target], message_entity)
+
+                count_sent += 1
+                print(f'[{count_sent}/{max_targets}] - [{name}] Отправил сообщение и ждет {delay} секунд.')
                 await asyncio.sleep(delay)
+            except telethon.errors.rpcerrorlist.PhoneNumberBannedError:
+                session_blocked.append(name)
+                print(f'[ERROR] [{name}] Номер заблокирован и прекратил рассылку.')
+                session.disconnect()
+
+                with open('bad_users.txt', 'a') as f:
+                    for i in range(target, len(targets), queue_step):
+                        f.write(targets[i]+'\n')
+                break
             except Exception as exception:
-                print(f'\n[{name}] Столкнулся с ошибкой. \n[ERROR] {exception}\n')
+                if 'A wait of ' in str(exception):
+                    pause_time = int(str(exception).split()[3])
+                    print(f'[{name}] Столкнулся с ошибкой. [ERROR] {exception}\n'
+                          f'И уходит в спячку на {pause_time} секунд.')
+                    await asyncio.sleep(pause_time)
+                else:
+                    print(f'[{name}] Столкнулся с ошибкой. [ERROR] {exception}')
+                with open('bad_users.txt', 'a') as f:
+                    f.write(targets[target]+'\n')
 
     # Отправка репостом в группы
     elif message_type == 2 and direction == 2:
         for target in range(queue_number, len(targets), queue_step):
             try:
+                if len(session_blocked) >= MAX_BLOCKED:
+                    session.disconnect()
+                    print(f'[STOP] [{name}] Было заблокировано {MAX_BLOCKED} или более аккаунтов.')
+
+                    with open('bad_users.txt', 'a') as f:
+                        for i in range(target, len(targets), queue_step):
+                            f.write(targets[i]+'\n')
+                    break
+
                 result = await session(ResolveUsernameRequest(targets[target].split('/')[-1]))
                 channel = types.InputChannel(result.peer.channel_id, result.chats[0].access_hash)
                 await session(JoinChannelRequest(channel))
 
-                await session.forward_messages(targets[target], message_entity)
+                if isinstance(message_entity, types.Message):
+                    await session.forward_messages(targets[target], message_entity)
 
-                print(f'[{name}] Отправил сообщение и ждет {delay} секунд.')
+                count_sent += 1
+                print(f'[{count_sent}/{max_targets}] - [{name}] Отправил сообщение и ждет {delay} секунд.')
                 await asyncio.sleep(delay)
+            except telethon.errors.rpcerrorlist.PhoneNumberBannedError:
+                session_blocked.append(name)
+                print(f'[ERROR] [{name}] Номер заблокирован и прекратил рассылку.')
+                session.disconnect()
+
+                with open('bad_users.txt', 'a') as f:
+                    for i in range(target, len(targets), queue_step):
+                        f.write(targets[i]+'\n')
+                break
             except Exception as exception:
-                print(f'\n[{name}] Столкнулся с ошибкой. \n[ERROR] {exception}\n')
+                if 'A wait of ' in str(exception):
+                    pause_time = int(str(exception).split()[3])
+                    print(f'[{name}] Столкнулся с ошибкой. [ERROR] {exception}\n'
+                          f'И уходит в спячку на {pause_time} секунд.')
+                    await asyncio.sleep(pause_time)
+                else:
+                    print(f'[{name}] Столкнулся с ошибкой. [ERROR] {exception}')
+                with open('bad_users.txt', 'a') as f:
+                    f.write(targets[target]+'\n')
 
     if settings['auto_reply'] == 1:
-        print(f'\n[{name}] Закончил отправку сообщений. И встал в режим автоответчика.\n')
+        print(f'[{name}] Закончил отправку сообщений. И встал в режим автоответчика.')
+        await session.run_until_disconnected()
     else:
         await session.disconnect()
-        print(f'\n[{name}] Закончил отправку сообщений.\n')
+        print(f'[{name}] Закончил отправку сообщений.')
+
+    if len(session_blocked) > 0:
+        session_blocked_string = "\n".join(session_blocked)
+        print(f'\nБыли заблокированы:\n{session_blocked_string}')
 
 
 async def get_targets_list() -> list:
@@ -337,10 +461,10 @@ async def get_message_string() -> str:
         return '\n'.join([line.strip() for line in f.readlines()])
 
 
-async def get_message_entity(session: TelegramClient, message_type: int) -> str or types.Message or None:
+async def get_message_entity(session: TelegramClient, message_type: int) -> list or types.Message or None:
     message_string = await get_message_string()
     if message_type == 1:
-        return message_string
+        return [message.strip() for message in message_string.split('|')]
     else:
         try:
             channel_entity = await session.get_entity('/'.join(message_string.split('/')[:-1]))
@@ -349,12 +473,12 @@ async def get_message_entity(session: TelegramClient, message_type: int) -> str 
             for message in await session.get_messages(channel_entity, limit=1000):
                 if message.id == message_id:
                     return message
-        except ValueError:
-            return
+        except ValueError as exception:
+            name = ''.join(session.__dict__['session'].filename.split('.')[:-1])
+            print(f'[{name}] Столкнулся с ошибкой. {exception}')
         except Exception as exception:
             name = ''.join(session.__dict__['session'].filename.split('.')[:-1])
-            print(f'\n[{name}] Столкнулся с ошибкой. \n[ERROR] {exception}\n')
-            return
+            print(f'[{name}] Столкнулся с ошибкой. {exception}')
 
 
 async def get_settings() -> dict:
